@@ -1,14 +1,18 @@
-from flask import Flask, request
+app.py:
+from flask import Flask, request, redirect, render_template
 from flask_cors import CORS
 import assemblyai as aai
 import os
-from sms import send_sms  # Import the function from sms.py
 
 app = Flask(__name__)
 CORS(app)
 
 # Set your AssemblyAI API key
 aai.settings.api_key = "a8414083bc4b4e298baf9d23e128da59"
+
+@app.route('/', methods=['GET'])
+def get_alerts():
+    return render_template("index.html")
 
 @app.route('/upload', methods=['POST'])
 def upload_audio():
@@ -23,9 +27,8 @@ def upload_audio():
 
     blob = audio_file.read()
     with open(file_path, 'wb') as f:
-        f.write(blob)   
+        f.write(blob)
 
-    
     # Now use the saved file path for transcription
     try:
         # Set the content safety and entity detection config
@@ -37,9 +40,6 @@ def upload_audio():
 
         # Transcribe the audio file with entity detection enabled
         transcript = aai.Transcriber().transcribe(file_path, config)
-
-        # Debug: Check the transcript response
-        print(f"Transcript Response: {transcript}")
 
         # Check if entities exist in the transcript
         if not transcript.entities:
@@ -55,11 +55,8 @@ def upload_audio():
                 flagged_found = True
                 break
 
-        # If flagged entity is found, trigger SMS and summarize the audio
+        # If flagged entity is found, redirect to the main page with the summary transcript
         if flagged_found:
-            # Call the send_sms function from sms.py
-            send_sms(f"Flagged content detected in {audio_file.filename}")
-
             # Set summarization config
             summary_config = aai.TranscriptionConfig(
                 summarization=True,
@@ -69,8 +66,8 @@ def upload_audio():
             # Transcribe with summarization enabled
             summary_transcript = aai.Transcriber().transcribe(file_path, summary_config)
 
-            # You can print the summary or use it as needed
-            print(f"Summary of the Audio: {summary_transcript.summary}")
+            # Redirect to the main page with the summary transcript
+            return redirect(f'/summary?summary={summary_transcript.summary}')
 
         # If no flagged entity is found, print in the terminal
         if not flagged_found:
@@ -86,6 +83,11 @@ def upload_audio():
     finally:
         # Clean up temporary file
         os.remove(file_path)
+
+@app.route('/summary', methods=['GET'])
+def show_summary():
+    summary = request.args.get('summary')
+    return render_template('index.html', summary=summary)
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001)
